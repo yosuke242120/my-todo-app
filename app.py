@@ -24,10 +24,9 @@ def check_password():
 if not check_password():
     st.stop()
 
-# --- 2. データベース準備（カテゴリー列を追加） ---
+# --- 2. データベース準備 ---
 conn = sqlite3.connect('todo.db', check_same_thread=False)
 c = conn.cursor()
-# 今回、category列を新しく追加した設計図にするよ
 c.execute('''CREATE TABLE IF NOT EXISTS tasks 
              (id INTEGER PRIMARY KEY AUTOINCREMENT, 
               content TEXT, 
@@ -38,7 +37,7 @@ c.execute('''CREATE TABLE IF NOT EXISTS tasks
               category TEXT)''')
 conn.commit()
 
-# --- 3. 画面レイアウト ---
+# --- 3. 画面レイアウト設定 ---
 st.set_page_config(page_title="My Task Master Pro", page_icon="🎯", layout="wide")
 
 # サイドバー：入力
@@ -60,13 +59,13 @@ with st.sidebar.expander("➕ 新規タスク登録", expanded=True):
 # --- 4. メイン画面 ---
 st.title("🎯 My Private Task Master")
 
-# データ取得
+# データ取得（期限が近い順に並べる）
 c.execute("SELECT * FROM tasks ORDER BY due_date ASC")
 all_tasks = c.fetchall()
 todo_tasks = [t for t in all_tasks if t[2] == 0]
 done_tasks = [t for t in all_tasks if t[2] == 1]
 
-# 進捗
+# 進捗管理
 if all_tasks:
     progress = len(done_tasks) / len(all_tasks)
     st.write(f"### 📊 進捗率: {int(progress * 100)}%")
@@ -78,23 +77,34 @@ col_left, col_right = st.columns(2)
 
 with col_left:
     st.subheader("📝 実行中")
-    # カテゴリー別にフィルタリングして表示する機能
-    filter_cat = st.multiselect("カテゴリーで絞り込み", ["仕事", "学習関連", "プライベート"], default=["仕事", "学習関連", "プライベート"])
+    filter_cat = st.multiselect("絞り込み", ["仕事", "学習関連", "プライベート"], default=["仕事", "学習関連", "プライベート"])
     
     for task in todo_tasks:
         if task[6] in filter_cat:
-            # 期限切れチェック
-            is_overdue = datetime.strptime(task[3], '%Y-%m-%d').date() < date.today()
-            border_color = "red" if is_overdue else "gray"
+            # 期限切れ判定
+            due_dt = datetime.strptime(task[3], '%Y-%m-%d').date()
+            is_overdue = due_dt < date.today()
             
-            # 枠付きコンテナで表示
+            # --- カテゴリーの色とアイコンを決める ---
+            cat_name = task[6]
+            if cat_name == "仕事":
+                cat_display = f":red[💼 {cat_name}]"
+            elif cat_name == "学習関連":
+                cat_display = f":green[📚 {cat_name}]"
+            else:
+                cat_display = f":blue[🏠 {cat_name}]"
+
+            # 枠付きコンテナ
             with st.container(border=True):
-                # 期限切れなら警告アイコンを出す
-                title_prefix = "⚠️ [期限切れ] " if is_overdue else ""
-                st.markdown(f"### {title_prefix}{task[1]}")
+                # 期限切れなら赤文字で強調
+                if is_overdue:
+                    st.markdown(f"### :red[⚠️ {task[1]}]")
+                    st.markdown(f"**‼️ 期限を過ぎています（{task[3]}）**")
+                else:
+                    st.markdown(f"### {task[1]}")
                 
-                # ラベルと日付の表示
-                st.caption(f"📂 {task[6]} | 📅 期限: {task[3]} | 🆕 登録: {task[5]}")
+                # カテゴリーと日付を表示
+                st.markdown(f"{cat_display} | 📅 期限: {task[3]} | 🆕 登録: {task[5]}")
                 
                 # 優先度の色付け
                 p_color = "red" if task[4] == "高" else "orange" if task[4] == "中" else "blue"
@@ -110,7 +120,7 @@ with col_right:
     for task in done_tasks:
         with st.container(border=True):
             st.markdown(f"~~{task[1]}~~")
-            st.caption(f"📂 {task[6]} | 📅 完了済み")
+            st.caption(f"📂 {task[6]} | 📅 完了")
             if st.button("削除 🗑️", key=f"del_{task[0]}"):
                 c.execute('DELETE FROM tasks WHERE id = ?', (task[0],))
                 conn.commit()

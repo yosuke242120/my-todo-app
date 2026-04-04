@@ -2,22 +2,53 @@ import streamlit as st
 import sqlite3
 from datetime import date
 
+# --- 1. パスワード認証機能 ---
+def check_password():
+    """パスワードが正しいかチェックし、結果を返す"""
+    def password_entered():
+        # Streamlit Cloudの「Secrets」設定、またはローカルのパスワードと比較
+        # ※後ほど設定する「yousuke123」というパスワードを想定
+        if st.session_state["password"] == st.secrets.get("password", "yousuke123"):
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # セキュリティのため入力値を消す
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        # 初回表示：パスワード入力フォーム
+        st.text_input("鍵がかかっています。パスワードを入力してください", 
+                      type="password", on_change=password_entered, key="password")
+        return False
+    elif not st.session_state["password_correct"]:
+        # 間違った場合
+        st.text_input("鍵がかかっています。パスワードを入力してください", 
+                      type="password", on_change=password_entered, key="password")
+        st.error("😕 パスワードが違います")
+        return False
+    else:
+        # 正解！
+        return True
+
+# 認証が通らない場合は、ここでプログラムを止める
+if not check_password():
+    st.stop()
+
+# --- 2. ここからToDoアプリ本体（認証成功時のみ実行される） ---
+
 # --- データベースの準備 ---
 conn = sqlite3.connect('todo.db', check_same_thread=False)
 c = conn.cursor()
-
-# ★修正ポイント1：created_at（作成日）の列を追加
 c.execute('''CREATE TABLE IF NOT EXISTS tasks 
              (id INTEGER PRIMARY KEY AUTOINCREMENT, 
               content TEXT, 
               status INTEGER, 
               due_date TEXT,
               priority TEXT,
-              created_at TEXT)''') # 作成日を追加！
+              created_at TEXT)''')
 conn.commit()
 
 # --- ページ設定 ---
-st.set_page_config(page_title="Task Master Pro", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="My Private Task Master", page_icon="🔐", layout="wide")
 
 # --- サイドバー：タスク登録 ---
 st.sidebar.title("🛠️ 操作パネル")
@@ -28,7 +59,6 @@ with st.sidebar.expander("➕ 新規タスク登録", expanded=True):
     
     if st.sidebar.button("タスクを保存", use_container_width=True):
         if new_task:
-            # ★修正ポイント2：登録した瞬間の日付（date.today()）を一緒に保存
             c.execute('''INSERT INTO tasks (content, status, due_date, priority, created_at) 
                          VALUES (?, ?, ?, ?, ?)''', 
                       (new_task, 0, str(selected_date), priority, str(date.today())))
@@ -36,7 +66,7 @@ with st.sidebar.expander("➕ 新規タスク登録", expanded=True):
             st.rerun()
 
 # --- メイン画面 ---
-st.title("⚡ Task Master Pro")
+st.title("🔐 My Private Task Master")
 
 # データの取得
 c.execute("SELECT * FROM tasks ORDER BY CASE priority WHEN '高' THEN 1 WHEN '中' THEN 2 WHEN '低' THEN 3 END")
@@ -60,8 +90,6 @@ with col_left:
         with st.container(border=True):
             color = "red" if task[4] == "高" else "orange" if task[4] == "中" else "blue"
             st.markdown(f"### {task[1]}")
-            
-            # ★修正ポイント3：作成日を表示に追加（task[5]が作成日）
             st.caption(f"📅 期限: {task[3]} / 🆕 登録日: {task[5]}")
             st.markdown(f"**優先度:** :{color}[{task[4]}]")
             
@@ -75,7 +103,7 @@ with col_right:
     for task in done_tasks:
         with st.container(border=True):
             st.markdown(f"~~{task[1]}~~")
-            st.caption(f"📅 完了済み (登録日: {task[5]})") # ここにも登録日
+            st.caption(f"📅 完了済み (登録日: {task[5]})")
             if st.button("削除 🗑️", key=f"del_{task[0]}"):
                 c.execute('DELETE FROM tasks WHERE id = ?', (task[0],))
                 conn.commit()

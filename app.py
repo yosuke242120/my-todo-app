@@ -59,7 +59,7 @@ with st.sidebar.expander("➕ 新規タスク登録", expanded=True):
 # --- 4. メイン画面 ---
 st.title("🎯 My Private Task Master")
 
-# データ取得（期限が近い順に並べる）
+# データ取得
 c.execute("SELECT * FROM tasks ORDER BY due_date ASC")
 all_tasks = c.fetchall()
 todo_tasks = [t for t in all_tasks if t[2] == 0]
@@ -81,49 +81,47 @@ with col_left:
     
     for task in todo_tasks:
         if task[6] in filter_cat:
-            # 期限切れ判定
             due_dt = datetime.strptime(task[3], '%Y-%m-%d').date()
             is_overdue = due_dt < date.today()
             
-            # --- カテゴリーの色とアイコンを決める ---
+            # --- カテゴリーごとに「箱の色」を決める ---
             cat_name = task[6]
+            
+            # ここが色付けの魔法！
+            # container の中身をまるごと色付きのボックスにする
             if cat_name == "仕事":
-                cat_display = f":red[💼 {cat_name}]"
+                box = st.error # 赤っぽい箱
+                cat_icon = "💼"
             elif cat_name == "学習関連":
-                cat_display = f":green[📚 {cat_name}]"
+                box = st.success # 緑っぽい箱
+                cat_icon = "📚"
             else:
-                cat_display = f":blue[🏠 {cat_name}]"
+                box = st.info # 青っぽい箱
+                cat_icon = "🏠"
 
-            # 枠付きコンテナ
-            with st.container(border=True):
-                # 期限切れなら赤文字で強調
+            with st.container():
+                # 箱の中にタスク情報を詰め込む
+                title_text = f"### {task[1]}"
                 if is_overdue:
-                    st.markdown(f"### :red[⚠️ {task[1]}]")
-                    st.markdown(f"**‼️ 期限を過ぎています（{task[3]}）**")
-                else:
-                    st.markdown(f"### {task[1]}")
+                    title_text = f"### ⚠️ [期限切れ] {task[1]}"
                 
-                # カテゴリーと日付を表示
-                st.markdown(f"{cat_display} | 📅 期限: {task[3]} | 🆕 登録: {task[5]}")
-                
-                # 優先度の色付け
-                p_color = "red" if task[4] == "高" else "orange" if task[4] == "中" else "blue"
-                st.markdown(f"優先度: :{p_color}[{task[4]}]")
+                # ボックスを表示
+                box(f"{cat_icon} {cat_name} | 📅 期限: {task[3]} | 優先度: {task[4]}")
+                st.markdown(title_text)
                 
                 if st.button("完了 ✅", key=f"done_{task[0]}", use_container_width=True):
                     c.execute('UPDATE tasks SET status = 1 WHERE id = ?', (task[0],))
                     conn.commit()
                     st.rerun()
+                st.write("") # 少し隙間を空ける
 
 with col_right:
     st.subheader("📁 完了済み")
     for task in done_tasks:
-        with st.container(border=True):
-            st.markdown(f"~~{task[1]}~~")
-            st.caption(f"📂 {task[6]} | 📅 完了")
-            if st.button("削除 🗑️", key=f"del_{task[0]}"):
-                c.execute('DELETE FROM tasks WHERE id = ?', (task[0],))
-                conn.commit()
-                st.rerun()
+        st.warning(f"~~{task[1]}~~ (完了済み)")
+        if st.button("削除 🗑️", key=f"del_{task[0]}"):
+            c.execute('DELETE FROM tasks WHERE id = ?', (task[0],))
+            conn.commit()
+            st.rerun()
 
 conn.close()

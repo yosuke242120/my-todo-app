@@ -6,75 +6,79 @@ from datetime import date
 conn = sqlite3.connect('todo.db', check_same_thread=False)
 c = conn.cursor()
 
-# テーブル作成（status: 0=未完了, 1=完了）
+# ★修正ポイント1：created_at（作成日）の列を追加
 c.execute('''CREATE TABLE IF NOT EXISTS tasks 
              (id INTEGER PRIMARY KEY AUTOINCREMENT, 
               content TEXT, 
               status INTEGER, 
               due_date TEXT,
-              priority TEXT)''')
+              priority TEXT,
+              created_at TEXT)''') # 作成日を追加！
 conn.commit()
 
-# --- アプリの画面設定 ---
-st.set_page_config(page_title="ToDo管理アプリ", page_icon="✅")
-st.title("✅ 完了管理機能付きToDo")
+# --- ページ設定 ---
+st.set_page_config(page_title="Task Master Pro", page_icon="⚡", layout="wide")
 
-# --- 1. タスク登録エリア ---
-with st.expander("➕ 新しいタスクを追加", expanded=False):
-    new_task = st.text_input("タスク名")
-    col1, col2 = st.columns(2)
-    with col1:
-        selected_date = st.date_input("期限", date.today())
-    with col2:
-        priority = st.selectbox("優先度", ["高", "中", "低"], index=1)
-
-    if st.button("登録する", use_container_width=True):
+# --- サイドバー：タスク登録 ---
+st.sidebar.title("🛠️ 操作パネル")
+with st.sidebar.expander("➕ 新規タスク登録", expanded=True):
+    new_task = st.sidebar.text_input("タスク名")
+    selected_date = st.sidebar.date_input("期限", date.today())
+    priority = st.sidebar.selectbox("優先度", ["高", "中", "低"], index=1)
+    
+    if st.sidebar.button("タスクを保存", use_container_width=True):
         if new_task:
-            # 初期状態は status=0 (未完了) で保存
-            c.execute('INSERT INTO tasks (content, status, due_date, priority) VALUES (?, ?, ?, ?)', 
-                      (new_task, 0, str(selected_date), priority))
+            # ★修正ポイント2：登録した瞬間の日付（date.today()）を一緒に保存
+            c.execute('''INSERT INTO tasks (content, status, due_date, priority, created_at) 
+                         VALUES (?, ?, ?, ?, ?)''', 
+                      (new_task, 0, str(selected_date), priority, str(date.today())))
             conn.commit()
             st.rerun()
 
-# --- 2. データの取得と分類 ---
-# 優先度順に全件取得
+# --- メイン画面 ---
+st.title("⚡ Task Master Pro")
+
+# データの取得
 c.execute("SELECT * FROM tasks ORDER BY CASE priority WHEN '高' THEN 1 WHEN '中' THEN 2 WHEN '低' THEN 3 END")
 all_tasks = c.fetchall()
-
-# 未完了と完了済みでリストを分ける（プログラム側で仕分け）
 todo_tasks = [t for t in all_tasks if t[2] == 0]
 done_tasks = [t for t in all_tasks if t[2] == 1]
 
-# --- 3. メイン表示エリア ---
-st.subheader("📝 実行中のタスク")
-if not todo_tasks:
-    st.info("現在、実行中のタスクはありません。")
+# 進捗管理
+if all_tasks:
+    progress = len(done_tasks) / len(all_tasks)
+    st.write(f"### 📊 現在の達成率: {int(progress * 100)}%")
+    st.progress(progress)
+    st.divider()
 
-for task in todo_tasks:
-    with st.container(border=True):
-        cols = st.columns([0.6, 0.2, 0.2])
-        p_icon = "🔥" if task[4] == "高" else "📄"
-        cols[0].markdown(f"{p_icon} **{task[1]}** (期限: {task[3]})")
-        cols[1].caption(f"優先度: {task[4]}")
-        
-        # ★修正ポイント：DELETEではなくUPDATEでstatusを1にする
-        if cols[2].button("完了 ✅", key=f"done_{task[0]}"):
-            c.execute('UPDATE tasks SET status = 1 WHERE id = ?', (task[0],))
-            conn.commit()
-            st.rerun()
+# --- タスク表示 ---
+col_left, col_right = st.columns(2)
 
-# --- 4. 完了済みエリア ---
-st.divider()
-with st.expander(f"📁 完了済みのタスク ({len(done_tasks)}件)"):
+with col_left:
+    st.subheader("📝 実行中")
+    for task in todo_tasks:
+        with st.container(border=True):
+            color = "red" if task[4] == "高" else "orange" if task[4] == "中" else "blue"
+            st.markdown(f"### {task[1]}")
+            
+            # ★修正ポイント3：作成日を表示に追加（task[5]が作成日）
+            st.caption(f"📅 期限: {task[3]} / 🆕 登録日: {task[5]}")
+            st.markdown(f"**優先度:** :{color}[{task[4]}]")
+            
+            if st.button("完了 ✅", key=f"done_{task[0]}", use_container_width=True):
+                c.execute('UPDATE tasks SET status = 1 WHERE id = ?', (task[0],))
+                conn.commit()
+                st.rerun()
+
+with col_right:
+    st.subheader("📁 完了済み")
     for task in done_tasks:
-        cols = st.columns([0.7, 0.3])
-        # 打ち消し線を入れる演出
-        cols[0].markdown(f"~~{task[1]}~~")
-        
-        # 完全に消したい時のための削除ボタン
-        if cols[1].button("完全に削除 🗑️", key=f"del_{task[0]}"):
-            c.execute('DELETE FROM tasks WHERE id = ?', (task[0],))
-            conn.commit()
-            st.rerun()
+        with st.container(border=True):
+            st.markdown(f"~~{task[1]}~~")
+            st.caption(f"📅 完了済み (登録日: {task[5]})") # ここにも登録日
+            if st.button("削除 🗑️", key=f"del_{task[0]}"):
+                c.execute('DELETE FROM tasks WHERE id = ?', (task[0],))
+                conn.commit()
+                st.rerun()
 
 conn.close()
